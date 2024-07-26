@@ -1,0 +1,92 @@
+---
+title: "Class project analysis"
+author: "Roshan Ranganathan"
+format: html
+execute:
+  echo: false
+---
+
+```{r}
+#| label: setup
+#| message: false
+library(tidyverse)
+library(brms)
+library(dplyr)
+library(tidybayes)
+library(gtsummary)
+x <- read_csv("STAR.csv", show_col_types = FALSE)
+```
+
+What is the relation between class size and grades?
+
+```{r}
+x <- x %>%
+  mutate(race = recode(race,
+                       `1` = "White",
+                       `2` = "Black",
+                       `3` = "Asian",
+                       `4` = "Hispanic",
+                       `5` = "Native American",
+                       `6` = "Others"),
+         classtype = recode(classtype,
+                            `1` = "small",
+                            `2` = "regular",
+                            `3` = "regular with aid"),
+         hsgrad = recode(hsgrad,
+                         `1` = "Graduated",
+                         `0` = "Didn't graduate")) %>%
+  drop_na() %>%
+  select(g4math, classtype) %>%
+  filter(classtype %in% c("small", "regular"))
+```
+
+```{r}
+#| cache: true
+fit_cs <- brm(formula = g4math ~ classtype,
+             data = x,
+             family = gaussian(),
+             silent = 2,
+             refresh = 0,
+             seed = 9)
+```
+
+```{r}
+fit_cs |> 
+  add_epred_draws(newdata = tibble(classtype = c("small", "regular"))) |> 
+  select(classtype, .epred) |> 
+  ggplot(aes(x = .epred, fill = classtype)) +
+    geom_density(aes(y = after_stat(count/sum(count))), alpha = 0.5) +
+    labs(title = "Posterior for Exam Score",
+         subtitle = "Class size has no effect on exam score",
+         x = "Exam Score",
+         fill = "Classroom Size") +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank())
+  
+```
+
+```{r}
+fit_cs |> 
+  add_epred_draws(
+    newdata = tibble(classtype = c("small", "regular"))) |> 
+  pivot_wider(id_cols = .draw, names_from = classtype, values_from = .epred) |> 
+  mutate(causal_effect = small - regular) |> 
+  ggplot(aes(x = causal_effect)) +
+  geom_density(aes(y = after_stat(count/sum(count)))) +
+  labs(title = "Posterior for Causal Effect of Fewer Students",
+         subtitle = "Classes with fewer students do not have higher scores",
+         x = "Expected Difference in Exam Scores") +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank())
+```
+
+
+```{r}
+fit_cs |>
+  tbl_regression()
+```
+
